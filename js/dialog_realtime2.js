@@ -403,7 +403,7 @@ async function sendTextMessage(inputValue) {
 
     let voice_id = "longwan";
     let tts_model = "ali";
-    const token = await getTempToken(model_name, voice_id);
+    const token = await getTempToken("", voice_id);
     
     sendButton.innerHTML = '<i class="material-icons">stop</i>';
     initAudioContext();
