@@ -1,8 +1,6 @@
-let server_url = "/api/chat/chat_stream"
-let auth_url = "/api/generate_temp_token"
-let ws = null;   // ASR使用websocket双向流式连接
+let server_url = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
+let api_key = "";
 let isVoiceMode = true;                 // 默认使用语音模式
-
 let llm_answer = "";
 let cosyvoice = null;
 
@@ -76,47 +74,14 @@ toggleButton.addEventListener('click', () => {
     }
 });
 
-// 存储临时token及其获取时间
-let tempTokenCache = {
-    model: null,
-    token: null,
-    timestamp: null
-};
-
 async function getTempToken(model_name, voice_id) {
-    // 检查缓存中是否有有效的token（40秒内）
-    const now = Date.now();
-    if (tempTokenCache.token && tempTokenCache.timestamp &&
-        (now - tempTokenCache.timestamp) < 40000 && tempTokenCache.model == model_name) {
-        return tempTokenCache.token;
+    const apiKeyInput = document.getElementById('api-key');
+    api_key = apiKeyInput ? apiKeyInput.value.trim() : null;
+    if (!api_key)
+    {
+        alert("尚未配置api key");
     }
-
-    try {
-        const response = await fetch('/api/generate_temp_token', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ model_name, voice_id }),
-        });
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        const data = await response.json();
-
-        // 更新缓存
-        tempTokenCache = {
-            model: model_name,
-            token: data.token,
-            timestamp: now
-        };
-
-        return data.token;
-    } catch (error) {
-        console.error('获取临时token失败:', error);
-        alert('无法获取语音服务凭证，请稍后重试');
-        throw error;
-    }
+    return api_key;
 }
 
 async function running_audio_recorder() {
@@ -372,26 +337,34 @@ async function handleResponseStream(responseBody, isNewSession) {
             sse_data_buffer += chunk; // 将新数据追加到缓存区
 
             // 根据换行符拆分缓存区中的数据
-            const chunks = sse_data_buffer.split("\n");
-            for (let i = 0; i < chunks.length - 1; i++) {
-                try {
-                    const data = JSON.parse(chunks[i]);
-                    console.log("Received text:", data.text, sse_startpoint);
-                    addMessage(data.text, false, sse_startpoint);
-                    cosyvoice.sendText(data.text);
-                    sse_startpoint = false;
-                    sse_endpoint = data.endpoint;
-                    if (sse_endpoint)
-                    {
-                        console.log('cosyvoice stopped');
-                        await cosyvoice.stop();
+            const lines = sse_data_buffer.split("\n");
+            for (let i = 0; i < lines.length - 1; i++) {
+                const line = lines[i].trim();
+                if (!line || line === 'data: [DONE]') continue;
+
+                if (line.startsWith('data: ')) {
+                    try {
+                        const data = JSON.parse(line.substring(6));
+                        if (data.choices?.[0]?.delta?.content) {
+                            const text = data.choices[0].delta.content;
+                            console.log("Received text:", text, sse_startpoint);
+                            addMessage(text, false, sse_startpoint);
+                            cosyvoice.sendText(text);
+                            sse_startpoint = false;
+                        }
+                        // 处理结束标记
+                        if (data.usage) {
+                            console.log('Stream completed');
+                            sse_endpoint = true;
+                            await cosyvoice.stop();
+                        }
+                    } catch (error) {
+                        console.error("Error parsing chunk:", error);
                     }
-                } catch (error) {
-                    console.error("Error parsing chunk:", error);
                 }
-                // 将最后一个不完整的块保留在缓存区中
-                sse_data_buffer = chunks[chunks.length - 1];
             }
+            // 将最后一个不完整的块保留在缓存区中
+            sse_data_buffer = lines[lines.length - 1];
         }
     } catch (error) {
         console.error('流处理异常:', error);
@@ -418,13 +391,24 @@ async function tts_realtime_ws(voice_id, model_name) {
 async function sendTextMessage(inputValue) {
     console.log("sendTextMessage", inputValue)
 
-    let requestBody = {
-        input_mode: "text",
-        prompt: inputValue,
+    const requestBody = {
+        model: "qwen-plus", // 可按需更换模型
+        messages: [
+            { role: "system", content: "你是一个乐于助人的AI助手。" },
+            { role: "user", content: inputValue }
+        ],
+        stream: true,
+        stream_options: { include_usage: true }
     };
 
     let voice_id = "longwan";
-    let tts_model = "ali"; 
+    const voiceSelect = window.parent.document.getElementById('voice-select');
+    if (voiceSelect) {
+        voice_id = voiceSelect.value;
+    }
+
+    let tts_model = "ali";
+    const token = await getTempToken("", voice_id);
     
     sendButton.innerHTML = '<i class="material-icons">stop</i>';
     initAudioContext();
@@ -441,7 +425,10 @@ async function sendTextMessage(inputValue) {
             textInput.value = "";
             const response = await fetch(server_url, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
                 body: JSON.stringify(requestBody),
                 signal: sse_controller.signal
             });
