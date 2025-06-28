@@ -75,7 +75,7 @@ toggleButton.addEventListener('click', () => {
 });
 
 async function getTempToken(model_name, voice_id) {
-    const apiKeyInput = document.getElementById('api-key');
+    const apiKeyInput = window.parent.document.getElementById('api-key');
     api_key = apiKeyInput ? apiKeyInput.value.trim() : null;
     if (!api_key)
     {
