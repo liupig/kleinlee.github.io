@@ -15,28 +15,6 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('screen2').style.display = 'block';
         playCharacterVideo();
     });
-    const backgroundSelect = document.getElementById('background-select');
-    const bgVideo = document.getElementById('background-video');
-
-    // 设置视频属性
-    bgVideo.autoplay = true;
-    bgVideo.loop = true;
-    bgVideo.muted = true;
-
-    // 背景选择变化事件监听
-    backgroundSelect.addEventListener('change', function() {
-        const bgValue = this.value;
-        const bgUrl = `background/${bgValue}.mp4`;
-
-        // 设置视频源
-        bgVideo.src = bgUrl;
-        bgVideo.style.display = 'block';
-
-        // 尝试播放视频
-        bgVideo.play().catch(e => {
-            console.error('背景视频播放失败:', e);
-        });
-    });
 });
 
 async function loadSecret(secret) {
